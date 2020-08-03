@@ -15,6 +15,7 @@ import (
 	"k8s.io/klog/klogr"
 
 	kedav1alpha1 "github.com/kedacore/keda/pkg/apis/keda/v1alpha1"
+	prommetrics "github.com/kedacore/keda/pkg/metrics"
 	"github.com/operator-framework/operator-sdk/pkg/k8sutil"
 	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -34,6 +35,7 @@ type Adapter struct {
 }
 
 var logger = klogr.New().WithName("keda_metrics_adapter")
+var prometheusMetricsPort int
 
 func (a *Adapter) makeProviderOrDie() provider.MetricsProvider {
 
@@ -70,7 +72,10 @@ func (a *Adapter) makeProviderOrDie() provider.MetricsProvider {
 		os.Exit(1)
 	}
 
-	return kedaprovider.NewProvider(logger, handler, kubeclient, namespace)
+	prometheusMetricsExporter := prommetrics.NewPrometheusMetricsExporter()
+	go func() { prometheusMetricsExporter.StartServer(fmt.Sprintf(":%v", prometheusMetricsPort), "/metrics") }()
+
+	return kedaprovider.NewProvider(logger, handler, kubeclient, namespace, prometheusMetricsExporter)
 }
 
 func printVersion() {
@@ -88,6 +93,7 @@ func main() {
 	cmd := &Adapter{}
 	cmd.Flags().StringVar(&cmd.Message, "msg", "starting adapter...", "startup message")
 	cmd.Flags().AddGoFlagSet(flag.CommandLine) // make sure we get the klog flags
+	cmd.Flags().IntVar(&prometheusMetricsPort, "metrics-port", 9022, "The port number to use for the /metrics endpoint")
 	cmd.Flags().Parse(os.Args)
 
 	kedaProvider := cmd.makeProviderOrDie()
